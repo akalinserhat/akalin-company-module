@@ -1,0 +1,31 @@
+{
+  "name": "@akalin/company_module",
+  "version": "1.0.0",
+  "description": "Webakus ERP ekosistemi için bağımsız, yeniden kullanılabilir firma (tenant) yönetimi, kullanıcı davetleri ve şirket politikaları modülü.",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "webakus",
+    "erp",
+    "company",
+    "tenant",
+    "organization",
+    "akalin"
+  ],
+  "author": "Akalin Software",
+  "license": "UNLICENSED",
+  "peerDependencies": {
+    "@akalin/module_core": "*",
+    "@akalin/ui": "*",
+    "react": ">=18.0.0",
+    "react-dom": ">=18.0.0",
+    "react-router-dom": ">=6.0.0",
+    "react-i18next": "*",
+    "react-hot-toast": "*",
+    "lucide-react": "*"
+  }
+}
