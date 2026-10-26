@@ -41,6 +41,7 @@ import {
   BaseWizardPage, 
   WizardStep, 
   BaseCardPage,
+  ActionMenuItem,
   TabLayout,
   AdresSeciciForm, 
   BasitInput, 
@@ -1573,11 +1574,11 @@ export default function FirmaForm({ id, onClose, onSuccess }) {
     );
   };
 
-  const handleSureUzat = (firmaId, firmaAdi) => {
+  const handleSureUzat = useCallback((firmaId, firmaAdi) => {
     setSureUzatPrompt({ isOpen: true, firmaId, firmaAdi });
-  };
+  }, []);
 
-  const onConfirmSureUzat = async (gun) => {
+  const onConfirmSureUzat = useCallback(async (gun) => {
     if (gun && !isNaN(gun)) {
       try {
         await axios.put(`/api/Firma/${sureUzatPrompt.firmaId}/sure-uzat`, { ekGunSayisi: parseInt(gun, 10) });
@@ -1589,9 +1590,9 @@ export default function FirmaForm({ id, onClose, onSuccess }) {
         showAlert('error', t('islem_basarisiz', 'İşlem Başarısız'), err.response?.data?.mesaj || t('islem_basarisiz', 'İşlem başarısız.'));
       }
     }
-  };
+  }, [sureUzatPrompt.firmaId, onSuccess, showAlert, t]);
 
-  const handleLisansaGecir = (firmaId, firmaAdi) => {
+  const handleLisansaGecir = useCallback((firmaId, firmaAdi) => {
     showAlert(
       'confirm',
       t('lisansa_gecir_baslik', 'Lisansa Geçir'),
@@ -1609,7 +1610,7 @@ export default function FirmaForm({ id, onClose, onSuccess }) {
       t('evet_lisansa_gecir', 'Evet, Lisansa Geçir'),
       t('iptal', 'İptal')
     );
-  };
+  }, [showAlert, onSuccess, t]);
 
   const handleFinish = async (e?: any) => {
     if (e && typeof e.preventDefault === 'function') {
@@ -3217,6 +3218,29 @@ export default function FirmaForm({ id, onClose, onSuccess }) {
     t
   ]);
 
+  const cardExtraDropdownActions = useMemo<ActionMenuItem[]>(() => {
+    if (!editingFirma) return [];
+    const isDemo = Boolean(editingFirma.isDemo ?? editingFirma.demoMu);
+    const actions: ActionMenuItem[] = [];
+
+    if (isDemo) {
+      actions.push(
+        {
+          label: t('sure_uzat', 'Süre Uzat'),
+          icon: <Clock size={15} />,
+          onClick: () => handleSureUzat(editingFirma.id, editingFirma.firmaAdi)
+        },
+        {
+          label: t('normal_lisansa_gecir', 'Lisansa Geçir'),
+          icon: <ShieldCheck size={15} />,
+          onClick: () => handleLisansaGecir(editingFirma.id, editingFirma.firmaAdi)
+        }
+      );
+    }
+
+    return actions;
+  }, [editingFirma, handleSureUzat, handleLisansaGecir, t]);
+
   if (detailLoading) {
     return (
       <div className="page-loading-state">
@@ -3518,24 +3542,7 @@ export default function FirmaForm({ id, onClose, onSuccess }) {
           tabs={tabs}
           activeTabId={activeTabId}
           onTabChange={setActiveTabId}
-          headerExtra={editingFirma && (editingFirma.isDemo ?? editingFirma.demoMu) ? (
-            <div className="header-extra-buttons flex-row items-center gap-8">
-              <button
-                type="button"
-                className="btn btn-secondary flex-row items-center gap-6"
-                onClick={() => handleSureUzat(editingFirma.id, editingFirma.firmaAdi)}
-              >
-                <Clock size={16} /> {t('sure_uzat', 'Süre Uzat')}
-              </button>
-              <button
-                type="button"
-                className="btn btn-secondary flex-row items-center gap-6"
-                onClick={() => handleLisansaGecir(editingFirma.id, editingFirma.firmaAdi)}
-              >
-                <ShieldCheck size={16} /> {t('normal_lisansa_gecir', 'Lisansa Geçir')}
-              </button>
-            </div>
-          ) : undefined}
+          extraDropdownActions={cardExtraDropdownActions}
         />
       ) : (
         /* ─── YENİ FİRMA KAYIT MODU (ADIM ADIM SİHİRBAZ) ─── */
