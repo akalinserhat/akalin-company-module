@@ -178,6 +178,14 @@ export const DEFAULT_CARI_TURU_CONFIG = {
   kokSiralama: 'kurumsal_once' // 'kurumsal_once' | 'bireysel_once'
 };
 
+export const normalizeModuleKey = (val?: string | null): string => {
+  if (!val) return '';
+  return String(val)
+    .toUpperCase()
+    .replace(/^MOD_/, '')
+    .replace(/[^A-Z0-9]/g, '');
+};
+
 export const DEFAULT_SEKTOREL_SEED_DATA = {
   paraBirimleri: [
     { kod: 'TRY', ad: 'Türk Lirası', sembol: '₺', varsayilanMi: true, aktifMi: true },
@@ -1366,17 +1374,26 @@ export default function FirmaForm({ id, onClose, onSuccess }) {
 
       if (configModules.length > 0) {
         mergedModules = configModules.map((cm: any) => {
-          const matchDb = dbModules.find((dm: any) => 
-            dm.kod === cm.id || 
-            dm.kod?.toLowerCase() === cm.id?.toLowerCase() ||
-            dm.ad?.toLowerCase() === cm.title?.toLowerCase()
-          );
+          const normCmId = normalizeModuleKey(cm.id);
+          const matchDb = dbModules.find((dm: any) => {
+            if (!dm) return false;
+            if (dm.kod === cm.id) return true;
+            if (dm.kod?.toLowerCase() === cm.id?.toLowerCase()) return true;
+            const normDmKod = normalizeModuleKey(dm.kod);
+            if (normDmKod && normCmId && (normDmKod === normCmId || normDmKod.includes(normCmId) || normCmId.includes(normDmKod))) {
+              return true;
+            }
+            if (dm.ad && cm.title && dm.ad.toLowerCase().trim() === cm.title.toLowerCase().trim()) {
+              return true;
+            }
+            return false;
+          });
           return {
             ...cm,
             dbId: matchDb?.id ?? null,
             kod: matchDb?.kod ?? cm.id,
             title: cm.title || matchDb?.ad || cm.id,
-            isCore: Boolean(cm.isCore || (matchDb && SYSTEM_CORE_MODULE_CODES.includes(matchDb.kod))),
+            isCore: Boolean(cm.isCore || (matchDb && SYSTEM_CORE_MODULE_CODES.includes(matchDb.kod)) || SYSTEM_CORE_MODULE_CODES.includes(cm.id)),
             enabled: cm.enabled !== false,
             order: cm.order ?? 0
           };
@@ -1710,7 +1727,12 @@ export default function FirmaForm({ id, onClose, onSuccess }) {
         .map((mId: any) => {
           if (typeof mId === 'number') return mId;
           if (typeof mId === 'string' && /^\d+$/.test(mId)) return parseInt(mId, 10);
-          const found = tumModuller.find((tm: any) => tm.id === mId || tm.kod === mId);
+          const normM = normalizeModuleKey(mId);
+          const found = tumModuller.find((tm: any) => 
+            tm.id === mId || 
+            tm.kod === mId ||
+            (normM && (normalizeModuleKey(tm.id) === normM || normalizeModuleKey(tm.kod) === normM))
+          );
           return found?.dbId ?? (typeof found?.id === 'number' ? found.id : null);
         })
         .filter((id): id is number => typeof id === 'number' && !isNaN(id))
@@ -1742,12 +1764,11 @@ export default function FirmaForm({ id, onClose, onSuccess }) {
       if (editingFirma && editingFirma.id) {
         await axios.put(`/api/Firma/${editingFirma.id}`, savePayload);
         try {
-          if (numericModulIds.length > 0) {
-            await axios.put(`/api/Firma/${editingFirma.id}/moduller`, numericModulIds);
-          }
+          await axios.put(`/api/Firma/${editingFirma.id}/moduller`, numericModulIds);
         } catch (mErr) {
           console.warn('Modül güncelleme ikincil endpoint uyarısı:', mErr);
         }
+        await fetchFirmaDetay(editingFirma.id);
         toast.success(t('firma_bilgileri_guncellendi', 'Firma bilgileri ve modül izinleri başarıyla güncellendi.'));
         if (onSuccess) {
           onSuccess(editingFirma.id);
@@ -1757,7 +1778,7 @@ export default function FirmaForm({ id, onClose, onSuccess }) {
       } else {
         const createRes = await axios.post(`/api/Firma/kayit/demo`, savePayload);
         const newFirmaId = createRes.data?.firmaId || createRes.data?.id;
-        if (newFirmaId && numericModulIds.length > 0) {
+        if (newFirmaId) {
           try {
             await axios.put(`/api/Firma/${newFirmaId}/moduller`, numericModulIds);
           } catch (mErr) {
@@ -2008,11 +2029,20 @@ export default function FirmaForm({ id, onClose, onSuccess }) {
       SYSTEM_CORE_MODULE_CODES.includes(modul.id);
     if (isCore) return true;
 
-    return firmaModulleri.some((mId: any) => 
-      String(mId) === String(modul.id) ||
-      (modul.dbId != null && String(mId) === String(modul.dbId)) ||
-      (modul.kod != null && String(mId) === String(modul.kod))
-    );
+    const normId = normalizeModuleKey(modul.id);
+    const normKod = normalizeModuleKey(modul.kod);
+
+    return firmaModulleri.some((mId: any) => {
+      if (mId == null) return false;
+      if (String(mId) === String(modul.id)) return true;
+      if (modul.dbId != null && String(mId) === String(modul.dbId)) return true;
+      if (modul.kod != null && String(mId) === String(modul.kod)) return true;
+      if (typeof mId === 'string') {
+        const normM = normalizeModuleKey(mId);
+        if (normM && (normM === normId || normM === normKod)) return true;
+      }
+      return false;
+    });
   }, [firmaModulleri]);
 
   const handleToggleModul = useCallback((modul: any, checked?: boolean) => {
@@ -2025,16 +2055,25 @@ export default function FirmaForm({ id, onClose, onSuccess }) {
     const currentlySelected = isModuleSelected(modul);
     const shouldSelect = checked !== undefined ? checked : !currentlySelected;
 
+    const normId = normalizeModuleKey(modul.id);
+    const normKod = normalizeModuleKey(modul.kod);
+
     let nextIds: any[] = [];
     if (shouldSelect) {
-      const toAdd = [modul.id, modul.dbId].filter(Boolean);
+      const toAdd = [modul.id, modul.dbId, modul.kod].filter(Boolean);
       nextIds = Array.from(new Set([...firmaModulleri, ...toAdd]));
     } else {
-      nextIds = firmaModulleri.filter((mId: any) => 
-        String(mId) !== String(modul.id) &&
-        (modul.dbId == null || String(mId) !== String(modul.dbId)) &&
-        (modul.kod == null || String(mId) !== String(modul.kod))
-      );
+      nextIds = firmaModulleri.filter((mId: any) => {
+        if (mId == null) return false;
+        if (String(mId) === String(modul.id)) return false;
+        if (modul.dbId != null && String(mId) === String(modul.dbId)) return false;
+        if (modul.kod != null && String(mId) === String(modul.kod)) return false;
+        if (typeof mId === 'string') {
+          const normM = normalizeModuleKey(mId);
+          if (normM && (normM === normId || normM === normKod)) return false;
+        }
+        return true;
+      });
     }
 
     setFirmaModulleri(nextIds);
@@ -3245,78 +3284,7 @@ export default function FirmaForm({ id, onClose, onSuccess }) {
 
   /** 5. BÖLÜM: Modül İzinleri */
   const renderModulIzinleri = () => (
-    <div className="firma-tab-content flex-col gap-16">
-      {/* Bilgilendirici Adım / Sekme Banner'ı (Yalnızca Sihirbaz Modunda) */}
-      {!isEditMode && (
-        <div className="wizard-step-banner">
-          <div className="wizard-step-banner-icon">
-            <Package size={22} />
-          </div>
-          <div className="wizard-step-banner-body">
-            <div className="wizard-step-banner-badge">{t('adim_5_etiket_moduller', '5. Adım / Sistem İzinleri')}</div>
-            <div className="wizard-step-banner-title">{t('firma_modul_yetkileri', 'Firma Modül ve Özellik İzinleri')}</div>
-            <div className="wizard-step-banner-desc">
-              {t('firma_modul_yetkileri_aciklama', 'Bu işletmenin erişimine açık olacak ERP modüllerini (Stok, Fatura, Finans, E-Dönüşüm vb.) seçip özelleştiriniz.')}
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div className="flex-row items-center justify-between">
-        <div>
-          <h4 className="firma-modul-heading">
-            {t('aktif_modul_listesi', 'Kullanılabilir Modül Listesi')}
-          </h4>
-          <p className="firma-modul-subheading">
-            {t('firma_modul_aciklama', 'Bu firmanın kullanımına açık olacak sistem modüllerini belirleyin.')}
-          </p>
-        </div>
-
-        <div className="flex-row gap-8">
-          {formData.faaliyetAlanlari?.length > 0 && (
-            <button
-              type="button"
-              className="btn btn-secondary firma-action-btn-sm"
-              onClick={handleApplySectorModuller}
-              title={t('faaliyet_alani_modulleri_ipucu', 'Faaliyet alanında belirlenen varsayılan modül seçimlerini uygular.')}
-            >
-              <RotateCcw size={14} /> {t('faaliyet_alani_modulleri_yukle', 'Faaliyet Alanından Yükle')}
-            </button>
-          )}
-          <button
-            type="button"
-            className="btn btn-secondary firma-action-btn-sm"
-            onClick={handleSelectAllModuller}
-          >
-            <CheckSquare size={14} /> {t('tumunu_sec', 'Tümünü Seç')}
-          </button>
-          <button
-            type="button"
-            className="btn btn-secondary firma-action-btn-sm"
-            onClick={handleClearAllModuller}
-          >
-            <Square size={14} /> {t('temizle', 'Temizle')}
-          </button>
-        </div>
-      </div>
-
-      {seciliSektorAdlari.length > 0 && (
-        <div className="firma-modul-sector-info">
-          <Sparkles size={16} />
-          <span>
-            {t('faaliyet_alani_baglantisi', 'Seçili Faaliyet Alanı')}: <strong>{seciliSektorAdlari.join(', ')}</strong>
-          </span>
-          <span className="firma-modul-sector-count">
-            {t('secili_modul_sayisi_detayli', '{{selected}} / {{total}} Modül Seçili ({{businessCount}} İş Modülü + {{coreCount}} Çekirdek)', {
-              selected: tumModuller.filter(m => isModuleSelected(m)).length,
-              total: tumModuller.length,
-              businessCount: tumModuller.filter(m => isModuleSelected(m) && !Boolean(m.isCore || SYSTEM_CORE_MODULE_CODES.includes(m.kod) || SYSTEM_CORE_MODULE_CODES.includes(m.id))).length,
-              coreCount: tumModuller.filter(m => Boolean(m.isCore || SYSTEM_CORE_MODULE_CODES.includes(m.kod) || SYSTEM_CORE_MODULE_CODES.includes(m.id))).length
-            })}
-          </span>
-        </div>
-      )}
-
+    <div className="firma-tab-content flex-col">
       <div className="glass-card rounded-xl border border-border overflow-hidden firma-moduller-table-wrapper">
         <DataTable<any>
           data={tumModuller}
