@@ -11,7 +11,7 @@
  * 2. FİRMA DÜZENLEME (id mevcut):
  *    - @BaseCardPage ve @TabLayout ile sekmeli (Tabbed) kart düzeni sunar.
  *    - Yönetici istediği sekmeye (Genel Bilgiler, Faaliyet Alanı, Sektörel Ayarlar, Depolar ve Şubeler, Modüller, Kullanıcılar, Hareketler)
- *      doğrudan tıklar ve bağımsız olarak güncelleyip "Değişiklikleri Kaydet" ile kaydeder.
+ *      doğrudan tıklar ve bağımsız olarak güncelleyip "Kaydet" ile kaydeder.
  * 
  * --- İLERİDE DEĞİŞİKLİK YAPACAK YAPAY ZEKA AJANLARI İÇİN KURALLAR ---
  * 
@@ -3762,7 +3762,7 @@ export default function FirmaForm({ id, onClose, onSuccess }) {
           onSubmit={handleFinish}
           onSave={handleFinish}
           isSaving={saving}
-          saveButtonText={t('degisiklikleri_kaydet', 'Değişiklikleri Kaydet')}
+          saveButtonText={t('kaydet', 'Kaydet')}
           tabs={tabs}
           activeTabId={activeTabId}
           onTabChange={setActiveTabId}
