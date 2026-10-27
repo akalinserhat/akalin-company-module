@@ -59,9 +59,12 @@ import {
   EkleFloatCircleButton,
   AdresLayer,
   DepoFormCard,
-  ModulCardBasit,
+  DataTable,
+  BaseSwitch,
+  type Column,
   ModuleSettingsRegistry
 } from '@akalin/ui';
+import { renderModuleIcon } from '../constants/moduleIcons';
 import FirmaKullaniciForm from './FirmaKullaniciForm';
 import FirmaKullaniciDavetModal from '../components/FirmaKullaniciDavetModal';
 import { 
@@ -211,7 +214,13 @@ export const SYSTEM_CORE_MODULE_CODES = [
   'MOD_DASHBOARD',
   'MOD_SISTEM_AYARLARI',
   'MOD_BILDIRIMLER',
-  'MOD_YARDIM'
+  'MOD_YARDIM',
+  'auth',
+  'dashboard',
+  'sistem_ayarlari',
+  'bildirimler',
+  'yardim',
+  'global_arama'
 ];
 
 export const DEFAULT_CORE_MODULE_CODES = SYSTEM_CORE_MODULE_CODES;
@@ -552,8 +561,8 @@ export const resolveSectorModules = (faaliyetIds, allSectors, allModules) => {
     if (item === null || item === undefined) continue;
 
     if (typeof item === 'number') {
-      const found = allModules.find((m) => m.id === item && m.aktifMi);
-      if (found) matchedIds.add(found.id);
+      const found = allModules.find((m) => (m.id === item || m.dbId === item) && (m.aktifMi !== false && m.enabled !== false));
+      if (found) matchedIds.add(found.dbId ?? found.id);
       continue;
     }
 
@@ -563,11 +572,11 @@ export const resolveSectorModules = (faaliyetIds, allSectors, allModules) => {
       const normObjKod = normalizeKod(objKod);
       const found = allModules.find(
         (m) =>
-          m.aktifMi &&
-          ((objId && m.id === objId) ||
-            (objKod && (m.kod === objKod || normalizeKod(m.kod) === normObjKod)))
+          (m.aktifMi !== false && m.enabled !== false) &&
+          ((objId && (m.id === objId || m.dbId === objId)) ||
+            (objKod && (m.kod === objKod || m.id === objKod || normalizeKod(m.kod) === normObjKod || normalizeKod(m.id) === normObjKod)))
       );
-      if (found) matchedIds.add(found.id);
+      if (found) matchedIds.add(found.dbId ?? found.id);
       continue;
     }
 
@@ -578,28 +587,31 @@ export const resolveSectorModules = (faaliyetIds, allSectors, allModules) => {
 
       let found = allModules.find(
         (m) =>
-          m.aktifMi &&
-          ((m.kod || '').toLowerCase() === lowerStr || normalizeKod(m.kod) === normStr)
+          (m.aktifMi !== false && m.enabled !== false) &&
+          ((m.kod || '').toLowerCase() === lowerStr ||
+            (m.id || '').toLowerCase() === lowerStr ||
+            normalizeKod(m.kod) === normStr ||
+            normalizeKod(m.id) === normStr)
       );
       if (found) {
-        matchedIds.add(found.id);
+        matchedIds.add(found.dbId ?? found.id);
         continue;
       }
 
       if (/^mod_\d+$/i.test(cleanStr)) {
         const num = parseInt(cleanStr.replace(/^mod_/i, ''), 10);
-        found = allModules.find((m) => m.id === num && m.aktifMi);
+        found = allModules.find((m) => (m.id === num || m.dbId === num) && (m.aktifMi !== false && m.enabled !== false));
         if (found) {
-          matchedIds.add(found.id);
+          matchedIds.add(found.dbId ?? found.id);
           continue;
         }
       }
 
       if (/^\d+$/.test(cleanStr)) {
         const num = parseInt(cleanStr, 10);
-        found = allModules.find((m) => m.id === num && m.aktifMi);
+        found = allModules.find((m) => (m.id === num || m.dbId === num) && (m.aktifMi !== false && m.enabled !== false));
         if (found) {
-          matchedIds.add(found.id);
+          matchedIds.add(found.dbId ?? found.id);
           continue;
         }
       }
@@ -608,8 +620,21 @@ export const resolveSectorModules = (faaliyetIds, allSectors, allModules) => {
 
   // Çekirdek sistem modüllerini her zaman dahil et
   for (const coreCode of SYSTEM_CORE_MODULE_CODES) {
-    const foundCore = allModules.find((m) => m.aktifMi && m.kod === coreCode);
-    if (foundCore) matchedIds.add(foundCore.id);
+    const foundCore = allModules.find(
+      (m) => (m.aktifMi !== false && m.enabled !== false) && 
+             (m.kod === coreCode || m.id === coreCode || m.isCore)
+    );
+    if (foundCore) {
+      matchedIds.add(foundCore.id);
+      if (foundCore.dbId != null) matchedIds.add(foundCore.dbId);
+    }
+  }
+
+  for (const m of allModules) {
+    if (m.isCore && (m.aktifMi !== false && m.enabled !== false)) {
+      matchedIds.add(m.id);
+      if (m.dbId != null) matchedIds.add(m.dbId);
+    }
   }
 
   return Array.from(matchedIds);
@@ -1235,9 +1260,11 @@ export default function FirmaForm({ id, onClose, onSuccess }) {
           setFormData(prev => ({ ...prev, modulIds: resolved }));
         }
       } else if (!formData.faaliyetAlanlari || formData.faaliyetAlanlari.length === 0) {
-        const coreIds = tumModuller
-          .filter(m => SYSTEM_CORE_MODULE_CODES.includes(m.kod))
-          .map(m => m.id);
+        const coreIds = Array.from(new Set(
+          tumModuller
+            .filter((m: any) => Boolean(m.isCore) || SYSTEM_CORE_MODULE_CODES.includes(m.kod) || SYSTEM_CORE_MODULE_CODES.includes(m.id))
+            .flatMap((m: any) => [m.id, m.dbId].filter(Boolean))
+        ));
         setFirmaModulleri(coreIds);
         setFormData(prev => ({ ...prev, modulIds: coreIds }));
       }
@@ -1326,12 +1353,53 @@ export default function FirmaForm({ id, onClose, onSuccess }) {
 
   const fetchTumModuller = async () => {
     try {
-      const res = await axios.get('/api/Moduller');
-      const mods = res.data || [];
-      setTumModuller(mods);
+      // Modül Yönetimi ile aynı kaynaktan (modules.json / config-file) ERP modüllerini çek
+      const [configRes, dbRes] = await Promise.allSettled([
+        axios.get('/api/moduller/config-file', { params: { kapsam: 'ERP', scope: 'ERP' } }),
+        axios.get('/api/Moduller')
+      ]);
+
+      const configModules: any[] = configRes.status === 'fulfilled' ? (configRes.value.data?.modules || []) : [];
+      const dbModules: any[] = dbRes.status === 'fulfilled' ? (dbRes.value.data || []) : [];
+
+      let mergedModules: any[] = [];
+
+      if (configModules.length > 0) {
+        mergedModules = configModules.map((cm: any) => {
+          const matchDb = dbModules.find((dm: any) => 
+            dm.kod === cm.id || 
+            dm.kod?.toLowerCase() === cm.id?.toLowerCase() ||
+            dm.ad?.toLowerCase() === cm.title?.toLowerCase()
+          );
+          return {
+            ...cm,
+            dbId: matchDb?.id ?? null,
+            kod: matchDb?.kod ?? cm.id,
+            title: cm.title || matchDb?.ad || cm.id,
+            isCore: Boolean(cm.isCore || (matchDb && SYSTEM_CORE_MODULE_CODES.includes(matchDb.kod))),
+            enabled: cm.enabled !== false,
+            order: cm.order ?? 0
+          };
+        }).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+      } else if (dbModules.length > 0) {
+        mergedModules = dbModules.map((dm: any, idx: number) => ({
+          id: dm.kod || `mod_${dm.id}`,
+          dbId: dm.id,
+          kod: dm.kod,
+          title: dm.ad || dm.kod,
+          package: dm.paketYolu || '',
+          iconName: dm.ikon || 'Package',
+          isCore: SYSTEM_CORE_MODULE_CODES.includes(dm.kod),
+          enabled: dm.aktifMi !== false,
+          order: dm.sira ?? idx
+        }));
+      }
+
+      setTumModuller(mergedModules);
+
       if (!id && !hasManuallyEditedModullerRef.current) {
         if (formData.faaliyetAlanlari && formData.faaliyetAlanlari.length > 0 && tumSektorler.length > 0) {
-          const resolved = resolveSectorModules(formData.faaliyetAlanlari, tumSektorler, mods);
+          const resolved = resolveSectorModules(formData.faaliyetAlanlari, tumSektorler, mergedModules);
           if (resolved && resolved.length > 0) {
             setFirmaModulleri(resolved);
             setFormData(prev => ({ ...prev, modulIds: resolved }));
@@ -1488,9 +1556,14 @@ export default function FirmaForm({ id, onClose, onSuccess }) {
 
       const modullerRes = await axios.get(`/api/Firma/${firmaId}/moduller`);
       if (modullerRes.data && modullerRes.data.length > 0) {
-        setFirmaModulleri(modullerRes.data.map((m) => m.modulId ?? m.ModulId ?? m.id));
+        const loadedIds = modullerRes.data.flatMap((m: any) => [
+          m.modulId ?? m.ModulId ?? m.id,
+          m.modul?.kod ?? m.Modul?.Kod,
+          m.modul?.ad ?? m.Modul?.Ad
+        ].filter(Boolean));
+        setFirmaModulleri(loadedIds);
       } else {
-        const faIds = firma.faaliyetAlanlari ? firma.faaliyetAlanlari.map((f) => f.id) : [];
+        const faIds = firma.faaliyetAlanlari ? firma.faaliyetAlanlari.map((f: any) => f.id) : [];
         const resolved = resolveSectorModules(faIds, tumSektorler, tumModuller);
         setFirmaModulleri(resolved || []);
       }
@@ -1632,10 +1705,21 @@ export default function FirmaForm({ id, onClose, onSuccess }) {
 
     clearErrors();
 
+    const numericModulIds = Array.from(new Set(
+      firmaModulleri
+        .map((mId: any) => {
+          if (typeof mId === 'number') return mId;
+          if (typeof mId === 'string' && /^\d+$/.test(mId)) return parseInt(mId, 10);
+          const found = tumModuller.find((tm: any) => tm.id === mId || tm.kod === mId);
+          return found?.dbId ?? (typeof found?.id === 'number' ? found.id : null);
+        })
+        .filter((id): id is number => typeof id === 'number' && !isNaN(id))
+    ));
+
     const primarySube = (formData.depolarVeSubeler || []).find(d => d.tur === 3 && d.adres) || (formData.depolarVeSubeler || []).find(d => d.adres);
     const savePayload = {
       ...formData,
-      modulIds: firmaModulleri,
+      modulIds: numericModulIds,
       depolarVeSubeler: formData.depolarVeSubeler,
       cariTuruYapilandirmaJson: formData.cariTuruYapilandirma ? JSON.stringify(formData.cariTuruYapilandirma) : (formData.cariTuruYapilandirmaJson || null),
       sektorelAyarlarJson: formData.sektorelSeedData ? JSON.stringify(formData.sektorelSeedData) : (formData.sektorelAyarlarJson || null)
@@ -1658,7 +1742,9 @@ export default function FirmaForm({ id, onClose, onSuccess }) {
       if (editingFirma && editingFirma.id) {
         await axios.put(`/api/Firma/${editingFirma.id}`, savePayload);
         try {
-          await axios.put(`/api/Firma/${editingFirma.id}/moduller`, firmaModulleri);
+          if (numericModulIds.length > 0) {
+            await axios.put(`/api/Firma/${editingFirma.id}/moduller`, numericModulIds);
+          }
         } catch (mErr) {
           console.warn('Modül güncelleme ikincil endpoint uyarısı:', mErr);
         }
@@ -1671,9 +1757,9 @@ export default function FirmaForm({ id, onClose, onSuccess }) {
       } else {
         const createRes = await axios.post(`/api/Firma/kayit/demo`, savePayload);
         const newFirmaId = createRes.data?.firmaId || createRes.data?.id;
-        if (newFirmaId && firmaModulleri.length > 0) {
+        if (newFirmaId && numericModulIds.length > 0) {
           try {
-            await axios.put(`/api/Firma/${newFirmaId}/moduller`, firmaModulleri);
+            await axios.put(`/api/Firma/${newFirmaId}/moduller`, numericModulIds);
           } catch (mErr) {
             console.error('Modül yetkileri atanırken hata:', mErr);
           }
@@ -1915,9 +2001,51 @@ export default function FirmaForm({ id, onClose, onSuccess }) {
     );
   };
 
+  const isModuleSelected = useCallback((modul: any) => {
+    if (!modul) return false;
+    const isCore = Boolean(modul.isCore) || 
+      SYSTEM_CORE_MODULE_CODES.includes(modul.kod) || 
+      SYSTEM_CORE_MODULE_CODES.includes(modul.id);
+    if (isCore) return true;
+
+    return firmaModulleri.some((mId: any) => 
+      String(mId) === String(modul.id) ||
+      (modul.dbId != null && String(mId) === String(modul.dbId)) ||
+      (modul.kod != null && String(mId) === String(modul.kod))
+    );
+  }, [firmaModulleri]);
+
+  const handleToggleModul = useCallback((modul: any, checked?: boolean) => {
+    const isCore = Boolean(modul.isCore) || 
+      SYSTEM_CORE_MODULE_CODES.includes(modul.kod) || 
+      SYSTEM_CORE_MODULE_CODES.includes(modul.id);
+    if (isCore) return;
+
+    hasManuallyEditedModullerRef.current = true;
+    const currentlySelected = isModuleSelected(modul);
+    const shouldSelect = checked !== undefined ? checked : !currentlySelected;
+
+    let nextIds: any[] = [];
+    if (shouldSelect) {
+      const toAdd = [modul.id, modul.dbId].filter(Boolean);
+      nextIds = Array.from(new Set([...firmaModulleri, ...toAdd]));
+    } else {
+      nextIds = firmaModulleri.filter((mId: any) => 
+        String(mId) !== String(modul.id) &&
+        (modul.dbId == null || String(mId) !== String(modul.dbId)) &&
+        (modul.kod == null || String(mId) !== String(modul.kod))
+      );
+    }
+
+    setFirmaModulleri(nextIds);
+    setFormData(prev => ({ ...prev, modulIds: nextIds }));
+  }, [firmaModulleri, isModuleSelected]);
+
   const handleSelectAllModuller = () => {
     hasManuallyEditedModullerRef.current = true;
-    const allIds = tumModuller.map(m => m.id);
+    const allIds = Array.from(new Set(
+      tumModuller.flatMap((m: any) => [m.id, m.dbId].filter(Boolean))
+    ));
     setFirmaModulleri(allIds);
     setFormData(prev => ({ ...prev, modulIds: allIds }));
     toast.success(t('tum_moduller_secildi', 'Tüm sistem modülleri seçildi.'));
@@ -1925,9 +2053,11 @@ export default function FirmaForm({ id, onClose, onSuccess }) {
 
   const handleClearAllModuller = () => {
     hasManuallyEditedModullerRef.current = true;
-    const coreIds = tumModuller
-      .filter(m => SYSTEM_CORE_MODULE_CODES.includes(m.kod))
-      .map(m => m.id);
+    const coreIds = Array.from(new Set(
+      tumModuller
+        .filter((m: any) => Boolean(m.isCore) || SYSTEM_CORE_MODULE_CODES.includes(m.kod) || SYSTEM_CORE_MODULE_CODES.includes(m.id))
+        .flatMap((m: any) => [m.id, m.dbId].filter(Boolean))
+    ));
     setFirmaModulleri(coreIds);
     setFormData(prev => ({ ...prev, modulIds: coreIds }));
     toast.success(t('is_modulleri_temizlendi', 'İş modülleri temizlendi (Çekirdek sistem modülleri korundu).'));
@@ -2097,9 +2227,11 @@ export default function FirmaForm({ id, onClose, onSuccess }) {
 
   const handleTumSektorleriTemizle = () => {
     hasManuallyEditedModullerRef.current = false;
-    const coreIds = tumModuller
-      .filter(m => SYSTEM_CORE_MODULE_CODES.includes(m.kod))
-      .map(m => m.id);
+    const coreIds = Array.from(new Set(
+      tumModuller
+        .filter((m: any) => Boolean(m.isCore) || SYSTEM_CORE_MODULE_CODES.includes(m.kod) || SYSTEM_CORE_MODULE_CODES.includes(m.id))
+        .flatMap((m: any) => [m.id, m.dbId].filter(Boolean))
+    ));
     setFormData(prev => ({ ...prev, faaliyetAlanlari: [], modulIds: coreIds }));
     if (!editingFirma) {
       setFirmaModulleri(coreIds);
@@ -2985,6 +3117,140 @@ export default function FirmaForm({ id, onClose, onSuccess }) {
     );
   };
 
+  // DataTable Sütun Tanımları (Modül Yönetimi ile Birebir Eşit)
+  const modulDataTableColumns = useMemo<Column<any>[]>(() => [
+    {
+      id: 'icon',
+      header: t('ikon', 'İkon'),
+      width: 60,
+      align: 'center',
+      render: (item: any) => (
+        <div className="module-grid-icon-cell">
+          {renderModuleIcon(item.iconName)}
+        </div>
+      )
+    },
+    {
+      id: 'title',
+      header: t('modul_adi', 'Modül Başlığı'),
+      accessor: 'title',
+      sortable: true,
+      minWidth: 200,
+      render: (item: any) => (
+        <div className="module-title-cell">
+          <span className="module-title-primary font-medium">
+            {item.title}
+          </span>
+          <span className="module-title-secondary">{item.exportName || item.kod || item.id}</span>
+        </div>
+      )
+    },
+    {
+      id: 'id',
+      header: t('modul_kodu', 'Modül Kimliği (ID)'),
+      accessor: 'id',
+      sortable: true,
+      width: 170,
+      render: (item: any) => (
+        <span className="module-id-badge font-mono">{item.id}</span>
+      )
+    },
+    {
+      id: 'package',
+      header: t('paket_yolu', 'Paket (@akalin/*) / Yol'),
+      accessor: 'package',
+      minWidth: 200,
+      render: (item: any) => (
+        <span className="module-package-text font-mono">
+          {item.package || item.path || '—'}
+        </span>
+      )
+    },
+    {
+      id: 'isCore',
+      header: t('cekirdek_sistem', 'Çekirdek Sistem'),
+      accessor: 'isCore',
+      sortable: true,
+      width: 140,
+      align: 'center',
+      render: (item: any) => {
+        const isCore = Boolean(item.isCore) || 
+          SYSTEM_CORE_MODULE_CODES.includes(item.kod) || 
+          SYSTEM_CORE_MODULE_CODES.includes(item.id);
+        return (
+          <div className="flex items-center justify-center">
+            {isCore ? (
+              <span className="modul-badge badge-core">
+                <ShieldCheck size={12} />
+                {t('cekirdek', 'Çekirdek')}
+              </span>
+            ) : (
+              <span
+                className="modul-badge"
+                style={{
+                  background: 'var(--bg-secondary)',
+                  color: 'var(--text-secondary)',
+                  border: '1px solid var(--border-color)'
+                }}
+              >
+                <Package size={12} />
+                {t('eklenti', 'Eklenti')}
+              </span>
+            )}
+          </div>
+        );
+      }
+    },
+    {
+      id: 'yetki',
+      header: t('firma_yetkisi', 'Firma Erişimi'),
+      width: 140,
+      align: 'center',
+      render: (item: any) => {
+        const isCore = Boolean(item.isCore) || 
+          SYSTEM_CORE_MODULE_CODES.includes(item.kod) || 
+          SYSTEM_CORE_MODULE_CODES.includes(item.id);
+        const isSelected = isModuleSelected(item);
+
+        return (
+          <div className="flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
+            <BaseSwitch
+              checked={isSelected}
+              disabled={isCore}
+              onChange={(e) => handleToggleModul(item, e.target.checked)}
+            />
+          </div>
+        );
+      }
+    },
+    {
+      id: 'actions',
+      header: t('ayarlar', 'Ayarlar'),
+      width: 90,
+      align: 'center',
+      render: (item: any) => {
+        const hasSettings = ModuleSettingsRegistry.has(item.kod || item.id || '');
+        if (!hasSettings) {
+          return <span className="text-muted text-xs">—</span>;
+        }
+        return (
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm firma-modul-settings-action-btn"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleOpenModulSettings(item.kod || item.id);
+            }}
+            title={t('modul_ayarlari', 'Modül Ayarları')}
+            style={{ padding: '6px', borderRadius: '6px' }}
+          >
+            <Settings2 size={16} />
+          </button>
+        );
+      }
+    }
+  ], [t, isModuleSelected, handleToggleModul, handleOpenModulSettings]);
+
   /** 5. BÖLÜM: Modül İzinleri */
   const renderModulIzinleri = () => (
     <div className="firma-tab-content flex-col gap-16">
@@ -3050,54 +3316,23 @@ export default function FirmaForm({ id, onClose, onSuccess }) {
           </span>
           <span className="firma-modul-sector-count">
             {t('secili_modul_sayisi_detayli', '{{selected}} / {{total}} Modül Seçili ({{businessCount}} İş Modülü + {{coreCount}} Çekirdek)', {
-              selected: firmaModulleri.length,
+              selected: tumModuller.filter(m => isModuleSelected(m)).length,
               total: tumModuller.length,
-              businessCount: firmaModulleri.filter(id => {
-                const m = tumModuller.find(tm => tm.id === id);
-                return m && !SYSTEM_CORE_MODULE_CODES.includes(m.kod);
-              }).length,
-              coreCount: tumModuller.filter(m => SYSTEM_CORE_MODULE_CODES.includes(m.kod)).length
+              businessCount: tumModuller.filter(m => isModuleSelected(m) && !Boolean(m.isCore || SYSTEM_CORE_MODULE_CODES.includes(m.kod) || SYSTEM_CORE_MODULE_CODES.includes(m.id))).length,
+              coreCount: tumModuller.filter(m => Boolean(m.isCore || SYSTEM_CORE_MODULE_CODES.includes(m.kod) || SYSTEM_CORE_MODULE_CODES.includes(m.id))).length
             })}
           </span>
         </div>
       )}
 
-      <div className="firma-moduller-list">
-        {tumModuller.map((modul) => {
-          const isCore = SYSTEM_CORE_MODULE_CODES.includes(modul.kod);
-          const isSelected = isCore || firmaModulleri.some((mId) => String(mId) === String(modul.id));
-          const hasSettings = ModuleSettingsRegistry.has(modul.kod || '');
-          return (
-            <ModulCardBasit
-              key={modul.id}
-              modul={modul}
-              isSelected={isSelected}
-              disabled={isCore}
-              hasSettings={hasSettings}
-              onSettingsClick={() => handleOpenModulSettings(modul.kod)}
-              extraActions={
-                isCore ? (
-                  <span
-                    className="modul-badge badge-core"
-                    title={t('cekirdek_modul_koruma_aciklamasi', 'Bu modül sistemin çalışması için zorunlu çekirdek modüldür, devre dışı bırakılamaz veya kaldırılamaz.')}
-                  >
-                    <ShieldCheck size={12} />
-                    {t('cekirdek_sistem', 'ÇEKİRDEK SİSTEM')}
-                  </span>
-                ) : null
-              }
-              onToggle={() => {
-                if (isCore) return;
-                hasManuallyEditedModullerRef.current = true;
-                const nextIds = isSelected
-                  ? firmaModulleri.filter((mId) => String(mId) !== String(modul.id))
-                  : [...firmaModulleri, modul.id];
-                setFirmaModulleri(nextIds);
-                setFormData(prev => ({ ...prev, modulIds: nextIds }));
-              }}
-            />
-          );
-        })}
+      <div className="glass-card rounded-xl border border-border overflow-hidden firma-moduller-table-wrapper">
+        <DataTable<any>
+          data={tumModuller}
+          columns={modulDataTableColumns}
+          pageSize={100}
+          emptyMessage={t('modul_bulunamadi', 'Kullanılabilir modül bulunamadı.')}
+          keyExtractor={(item) => String(item.id || item.kod || item.dbId)}
+        />
       </div>
     </div>
   );
@@ -3215,6 +3450,7 @@ export default function FirmaForm({ id, onClose, onSuccess }) {
     seciliKullanici,
     editingDepoItem,
     isAddingDepo,
+    modulDataTableColumns,
     t
   ]);
 

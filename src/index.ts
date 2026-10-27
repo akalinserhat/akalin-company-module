@@ -68,3 +68,6 @@ export {
 
 // Kancalar (Hooks)
 export { useFirmaFormAutoFocus } from './hooks/firmaFormAutoFocus';
+
+// Modül İkonları
+export { MODULE_ICON_MAP, renderModuleIcon } from './constants/moduleIcons';
