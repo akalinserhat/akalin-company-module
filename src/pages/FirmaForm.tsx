@@ -3185,14 +3185,7 @@ export default function FirmaForm({ id, onClose, onSuccess }) {
                 {t('cekirdek', 'Çekirdek')}
               </span>
             ) : (
-              <span
-                className="modul-badge"
-                style={{
-                  background: 'var(--bg-secondary)',
-                  color: 'var(--text-secondary)',
-                  border: '1px solid var(--border-color)'
-                }}
-              >
+              <span className="modul-badge badge-plugin">
                 <Package size={12} />
                 {t('eklenti', 'Eklenti')}
               </span>
@@ -3242,7 +3235,6 @@ export default function FirmaForm({ id, onClose, onSuccess }) {
               handleOpenModulSettings(item.kod || item.id);
             }}
             title={t('modul_ayarlari', 'Modül Ayarları')}
-            style={{ padding: '6px', borderRadius: '6px' }}
           >
             <Settings2 size={16} />
           </button>
@@ -3510,7 +3502,8 @@ export default function FirmaForm({ id, onClose, onSuccess }) {
     return (
       <BaseCardPage
         id="firmaParaBirimleriPage"
-        showBackButton={false}
+        showBackButton={true}
+        onBack={handleBackFromCurrency}
         title={t('sektorel_para_birimleri_baslik', 'Para Birimleri Yapılandırması')}
         icon={<Coins size={20} />}
         subtitleLeft={t('sektorel_para_birimleri_aciklama', 'Bu sektörü seçen firmanın veri tabanı ilk kurulumunda (seed) tanımlanacak varsayılan para birimlerini yapılandırın.')}
@@ -3543,7 +3536,8 @@ export default function FirmaForm({ id, onClose, onSuccess }) {
     return (
       <BaseCardPage
         id="firmaKdvPage"
-        showBackButton={false}
+        showBackButton={true}
+        onBack={handleBackFromKdv}
         title={t('sektorel_vergi_kdv_baslik', 'Vergi ve KDV Ayarları')}
         icon={<Percent size={20} />}
         subtitleLeft={t('sektorel_vergi_kdv_aciklama', 'Bu sektörü seçen firmanın veri tabanı ilk kurulumunda (seed) tanımlanacak varsayılan vergi ve KDV oranlarını yapılandırın.')}
@@ -3575,7 +3569,8 @@ export default function FirmaForm({ id, onClose, onSuccess }) {
     return (
       <BaseCardPage
         id="firmaBirimlerPage"
-        showBackButton={false}
+        showBackButton={true}
+        onBack={handleBackFromBirim}
         title={t('sektorel_birimler_baslik', 'Ölçü Birimleri Yapılandırması')}
         icon={<Scale size={20} />}
         subtitleLeft={t('sektorel_birimler_aciklama', 'Bu sektörü seçen firmanın veri tabanı ilk kurulumunda (seed) tanımlanacak varsayılan ölçü birimlerini (Adet, Kg, Litre vb.) yapılandırın.')}
@@ -3763,13 +3758,6 @@ export default function FirmaForm({ id, onClose, onSuccess }) {
           title={editingFirma?.firmaAdi || t('firma_duzenle', 'Firma Düzenle')}
           icon={<Building size={20} />}
           subtitleLeft={editingFirma?.vergiNo ? `${t('vkn_etiket', 'VKN:')} ${editingFirma.vergiNo}` : undefined}
-          subtitleRight={
-            editingFirma
-              ? (editingFirma.isDemo ?? editingFirma.demoMu)
-                ? (editingFirma.lisansKalanGun > 0 ? t('demo_kalan_gun_parantez', 'Demo ({gun} gün)', { gun: editingFirma.lisansKalanGun }) : t('demo_sure_bitti_kisa', 'Demo (Süre Bitti)'))
-                : t('normal_lisans', 'Normal Lisans')
-              : undefined
-          }
           onClose={onClose}
           onSubmit={handleFinish}
           onSave={handleFinish}
